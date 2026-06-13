@@ -3,10 +3,13 @@ import tempfile
 import threading
 import time
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime
 from pathlib import Path
 
 from PIL import Image, ImageDraw
+
+_CAPTURE_TIMEOUT_SECONDS = 30
 
 
 class BaseCamera(ABC):
@@ -32,29 +35,28 @@ class MockCamera(BaseCamera):
 
 
 class PiCamera(BaseCamera):
-    def __init__(self) -> None:
-        self._picam = None
-        self._resolution: tuple[int, int] | None = None
-
     def capture_jpeg(self, path: Path, resolution: tuple[int, int]) -> None:
         from picamera2 import Picamera2
 
-        if self._picam is None:
-            self._picam = Picamera2()
-            config = self._picam.create_still_configuration(main={"size": resolution})
-            self._picam.configure(config)
-            self._picam.start()
-            self._resolution = resolution
-            time.sleep(0.3)
-
-        self._picam.capture_file(str(path))
+        picam = Picamera2()
+        try:
+            config = picam.create_still_configuration(main={"size": resolution})
+            picam.configure(config)
+            picam.start()
+            time.sleep(0.8)
+            picam.capture_file(str(path))
+        finally:
+            try:
+                picam.stop()
+            except Exception:
+                pass
+            try:
+                picam.close()
+            except Exception:
+                pass
 
     def close(self) -> None:
-        if self._picam is not None:
-            self._picam.stop()
-            self._picam.close()
-            self._picam = None
-            self._resolution = None
+        return
 
 
 def create_camera(dev_mode: bool) -> BaseCamera:
@@ -78,19 +80,34 @@ class CameraService:
         self._last_success: float | None = None
         self._consecutive_failures = 0
         self._lock = threading.Lock()
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="camera")
 
     def capture(self) -> Path:
         with self._lock:
             path = self._temp_dir / f"snapshot_{int(time.time() * 1000)}.jpg"
+            future = self._executor.submit(
+                self._camera.capture_jpeg,
+                path,
+                self._resolution,
+            )
             try:
-                self._camera.capture_jpeg(path, self._resolution)
+                future.result(timeout=_CAPTURE_TIMEOUT_SECONDS)
                 self._last_success = time.monotonic()
                 self._consecutive_failures = 0
                 self._logger.info("Camera capture saved to %s", path.name)
                 return path
+            except FuturesTimeoutError:
+                self._consecutive_failures += 1
+                future.cancel()
+                self._camera.close()
+                self._logger.error("Camera capture timed out after %ss", _CAPTURE_TIMEOUT_SECONDS)
+                if path.exists():
+                    path.unlink(missing_ok=True)
+                raise TimeoutError("Camera capture timed out") from None
             except Exception:
                 self._consecutive_failures += 1
                 self._logger.exception("Camera capture failed")
+                self._camera.close()
                 if path.exists():
                     path.unlink(missing_ok=True)
                 raise
@@ -98,6 +115,7 @@ class CameraService:
     def close(self) -> None:
         with self._lock:
             self._camera.close()
+            self._executor.shutdown(wait=False, cancel_futures=True)
 
     def is_healthy(self) -> bool:
         if self._consecutive_failures == 0:

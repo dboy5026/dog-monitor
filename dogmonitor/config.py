@@ -12,7 +12,7 @@ _DEFAULTS: dict[str, Any] = {
     "server_port": 5000,
     "sensor_poll_interval_seconds": 5,
     "display_refresh_interval_seconds": 30,
-    "camera_resolution": [1920, 1080],
+    "camera_resolution": [1280, 720],
     "log_dir": "logs",
     "log_max_bytes": 1_048_576,
     "log_backup_count": 5,

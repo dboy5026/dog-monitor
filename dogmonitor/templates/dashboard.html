@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dog Monitor</title>
   <style>
@@ -146,9 +147,36 @@
       uptimeEl.textContent = formatUptime(data.uptime_seconds);
     }
 
+    async function fetchWithTimeout(url, timeoutMs = 45000) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, { signal: controller.signal });
+      } catch (err) {
+        if (err.name === "AbortError") {
+          throw new Error("Snapshot timed out — try Refresh again");
+        }
+        throw err;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
     async function loadSnapshot() {
-      const res = await fetch(`/snapshot?t=${Date.now()}`);
-      if (!res.ok) throw new Error("Failed to load snapshot");
+      const placeholder = imageContainer.querySelector(".placeholder");
+      if (!placeholder) {
+        const loading = document.createElement("div");
+        loading.className = "placeholder";
+        loading.textContent = "Capturing snapshot…";
+        imageContainer.appendChild(loading);
+      } else {
+        placeholder.textContent = "Capturing snapshot…";
+      }
+
+      const res = await fetchWithTimeout(`/snapshot?t=${Date.now()}`);
+      if (!res.ok) {
+        throw new Error(res.status === 503 ? "Camera unavailable — try Refresh again" : "Failed to load snapshot");
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       imageContainer.innerHTML = "";
