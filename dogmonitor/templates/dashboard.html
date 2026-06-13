@@ -160,16 +160,29 @@
     }
 
     async function refreshAll() {
+      if (refreshAll.inProgress) {
+        return refreshAll.inProgress;
+      }
+
       errorEl.textContent = "";
       refreshBtn.disabled = true;
-      try {
-        await Promise.all([loadStatus(), loadHealth(), loadSnapshot()]);
-      } catch (err) {
-        errorEl.textContent = err.message;
-      } finally {
-        refreshBtn.disabled = false;
-      }
+      refreshAll.inProgress = (async () => {
+        try {
+          await loadStatus();
+          await loadHealth();
+          await loadSnapshot();
+        } catch (err) {
+          errorEl.textContent = err.message;
+        } finally {
+          refreshBtn.disabled = false;
+          refreshAll.inProgress = null;
+        }
+      })();
+
+      return refreshAll.inProgress;
     }
+
+    refreshAll.inProgress = null;
 
     refreshBtn.addEventListener("click", refreshAll);
     refreshAll();

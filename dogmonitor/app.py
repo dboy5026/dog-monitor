@@ -74,6 +74,7 @@ def main() -> None:
     finally:
         display_service.stop()
         sensor_service.stop()
+        camera_service.close()
 
 
 if __name__ == "__main__":

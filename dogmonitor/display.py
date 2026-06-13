@@ -39,6 +39,15 @@ def _format_updated(updated_at: str) -> str:
         return updated_at[:19]
 
 
+def _format_temp_parts(temp_f: Any) -> tuple[str, str]:
+    if temp_f == "--":
+        return "--", "F"
+    try:
+        return str(int(round(float(temp_f)))), "°F"
+    except (TypeError, ValueError):
+        return "--", "F"
+
+
 def _build_landscape_image(epd, temp_f: Any, humidity: Any, wifi_ok: bool, updated_at: str):
     from PIL import Image, ImageDraw
 
@@ -46,17 +55,30 @@ def _build_landscape_image(epd, temp_f: Any, humidity: Any, wifi_ok: bool, updat
     image = Image.new("1", (width, height), 255)
     draw = ImageDraw.Draw(image)
 
-    temp_font = _load_font(54, bold=True)
+    temp_num, temp_unit = _format_temp_parts(temp_f)
+    num_font = _load_font(58, bold=True)
+    unit_font = _load_font(22, bold=True)
     small_font = _load_font(14, bold=False)
     tiny_font = _load_font(11, bold=False)
 
-    temp_text = f"{temp_f}°F" if temp_f != "--" else "--°F"
-    temp_bbox = draw.textbbox((0, 0), temp_text, font=temp_font)
-    temp_w = temp_bbox[2] - temp_bbox[0]
-    temp_h = temp_bbox[3] - temp_bbox[1]
-    temp_x = max(6, (width // 2 - temp_w) // 2)
-    temp_y = (height - temp_h) // 2 - 2
-    draw.text((temp_x, temp_y), temp_text, font=temp_font, fill=0)
+    num_bbox = draw.textbbox((0, 0), temp_num, font=num_font)
+    unit_bbox = draw.textbbox((0, 0), temp_unit, font=unit_font)
+    num_h = num_bbox[3] - num_bbox[1]
+    unit_h = unit_bbox[3] - unit_bbox[1]
+    block_h = num_h + unit_h + 2
+    block_y = (height - block_h) // 2
+    left_center_x = width // 4
+
+    num_w = num_bbox[2] - num_bbox[0]
+    draw.text((left_center_x - num_w // 2, block_y), temp_num, font=num_font, fill=0)
+
+    unit_w = unit_bbox[2] - unit_bbox[0]
+    draw.text(
+        (left_center_x - unit_w // 2, block_y + num_h + 2),
+        temp_unit,
+        font=unit_font,
+        fill=0,
+    )
 
     divider_x = width // 2
     draw.line([(divider_x, 10), (divider_x, height - 10)], fill=0, width=1)
