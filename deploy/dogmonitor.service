@@ -1,0 +1,28 @@
+# Install on Raspberry Pi:
+#   sudo cp deploy/dogmonitor.service /etc/systemd/system/dogmonitor.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable dogmonitor
+#   sudo systemctl start dogmonitor
+#
+# Update after git pull (if this file changed):
+#   sudo cp deploy/dogmonitor.service /etc/systemd/system/dogmonitor.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl restart dogmonitor
+
+[Unit]
+Description=Dog Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=admin
+WorkingDirectory=/home/admin/dog-monitor
+Environment=GPIOZERO_PIN_FACTORY=lgpio
+Environment=PYTHONPATH=/home/admin/e-Paper/RaspberryPi_JetsonNano/python/lib
+ExecStart=/home/admin/dog-monitor/venv/bin/python -m dogmonitor.app
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
