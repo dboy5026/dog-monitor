@@ -147,7 +147,7 @@
       uptimeEl.textContent = formatUptime(data.uptime_seconds);
     }
 
-    async function fetchWithTimeout(url, timeoutMs = 45000) {
+    async function fetchWithTimeout(url, timeoutMs = 35000) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
@@ -163,28 +163,44 @@
     }
 
     async function loadSnapshot() {
-      const placeholder = imageContainer.querySelector(".placeholder");
+      const existingImg = imageContainer.querySelector("img");
+      let placeholder = imageContainer.querySelector(".placeholder");
       if (!placeholder) {
-        const loading = document.createElement("div");
-        loading.className = "placeholder";
-        loading.textContent = "Capturing snapshot…";
-        imageContainer.appendChild(loading);
-      } else {
-        placeholder.textContent = "Capturing snapshot…";
+        placeholder = document.createElement("div");
+        placeholder.className = "placeholder";
+        if (existingImg) {
+          placeholder.textContent = "Capturing snapshot…";
+          imageContainer.appendChild(placeholder);
+        } else {
+          imageContainer.innerHTML = "";
+          imageContainer.appendChild(placeholder);
+        }
       }
+      placeholder.textContent = "Capturing snapshot…";
 
-      const res = await fetchWithTimeout(`/snapshot?t=${Date.now()}`);
-      if (!res.ok) {
-        throw new Error(res.status === 503 ? "Camera unavailable — try Refresh again" : "Failed to load snapshot");
+      try {
+        const res = await fetchWithTimeout(`/snapshot?t=${Date.now()}`);
+        if (!res.ok) {
+          throw new Error(
+            res.status === 503 ? "Camera unavailable — try Refresh again" : "Failed to load snapshot"
+          );
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        imageContainer.innerHTML = "";
+        const img = document.createElement("img");
+        img.src = url;
+        img.alt = "Latest snapshot";
+        img.onload = () => URL.revokeObjectURL(url);
+        imageContainer.appendChild(img);
+      } catch (err) {
+        if (existingImg) {
+          placeholder.remove();
+        } else {
+          placeholder.textContent = "Snapshot unavailable";
+        }
+        throw err;
       }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      imageContainer.innerHTML = "";
-      const img = document.createElement("img");
-      img.src = url;
-      img.alt = "Latest snapshot";
-      img.onload = () => URL.revokeObjectURL(url);
-      imageContainer.appendChild(img);
     }
 
     async function refreshAll() {

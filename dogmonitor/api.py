@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from flask import Blueprint, Flask, jsonify, request, send_file
 
-from dogmonitor.camera import CameraService
+from dogmonitor.camera import CameraBusyError, CameraService
 from dogmonitor.config import Config
 from dogmonitor.dashboard import create_dashboard_blueprint
 from dogmonitor.display import DisplayService
@@ -56,6 +56,12 @@ def create_api_blueprint(services: AppServices, logger: logging.Logger) -> Bluep
     def snapshot():
         try:
             path = services.camera.capture()
+        except CameraBusyError:
+            logger.warning("Snapshot skipped because camera is busy")
+            return jsonify({"error": "Camera busy"}), 503
+        except TimeoutError:
+            logger.error("Snapshot timed out")
+            return jsonify({"error": "Camera capture timed out"}), 503
         except Exception:
             logger.exception("Snapshot request failed")
             return jsonify({"error": "Camera capture failed"}), 503

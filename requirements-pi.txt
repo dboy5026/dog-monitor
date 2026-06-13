@@ -1,7 +1,7 @@
 # Pi hardware dependencies (install on Raspberry Pi OS only).
 #
 # System packages:
-#   sudo apt install python3-picamera2 python3-lgpio python3-spidev python3-gpiozero
+#   sudo apt install python3-picamera2 python3-lgpio python3-spidev python3-gpiozero rpicam-apps
 #   Enable SPI in raspi-config
 #
 # LAFVIN 2.13" e-Paper HAT uses the V4 driver (epd2in13_V4):

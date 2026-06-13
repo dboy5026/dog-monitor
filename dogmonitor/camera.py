@@ -1,15 +1,21 @@
 import logging
+import shutil
+import subprocess
 import tempfile
 import threading
 import time
 from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-_CAPTURE_TIMEOUT_SECONDS = 30
+_CAPTURE_TIMEOUT_SECONDS = 25
+_LOCK_TIMEOUT_SECONDS = 5
+
+
+class CameraBusyError(RuntimeError):
+    pass
 
 
 class BaseCamera(ABC):
@@ -36,6 +42,37 @@ class MockCamera(BaseCamera):
 
 class PiCamera(BaseCamera):
     def capture_jpeg(self, path: Path, resolution: tuple[int, int]) -> None:
+        width, height = resolution
+        for binary in ("rpicam-still", "libcamera-still"):
+            if shutil.which(binary):
+                self._capture_with_cli(binary, path, width, height)
+                return
+        self._capture_with_picamera2(path, resolution)
+
+    def _capture_with_cli(self, binary: str, path: Path, width: int, height: int) -> None:
+        result = subprocess.run(
+            [
+                binary,
+                "-o",
+                str(path),
+                "-t",
+                "2000",
+                "-n",
+                "--width",
+                str(width),
+                "--height",
+                str(height),
+            ],
+            capture_output=True,
+            timeout=_CAPTURE_TIMEOUT_SECONDS,
+        )
+        if result.returncode != 0:
+            stderr = result.stderr.decode(errors="replace").strip()
+            raise RuntimeError(stderr or f"{binary} failed with code {result.returncode}")
+        if not path.is_file() or path.stat().st_size == 0:
+            raise RuntimeError(f"{binary} produced an empty image")
+
+    def _capture_with_picamera2(self, path: Path, resolution: tuple[int, int]) -> None:
         from picamera2 import Picamera2
 
         picam = Picamera2()
@@ -80,42 +117,40 @@ class CameraService:
         self._last_success: float | None = None
         self._consecutive_failures = 0
         self._lock = threading.Lock()
-        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="camera")
 
     def capture(self) -> Path:
-        with self._lock:
-            path = self._temp_dir / f"snapshot_{int(time.time() * 1000)}.jpg"
-            future = self._executor.submit(
-                self._camera.capture_jpeg,
-                path,
-                self._resolution,
-            )
-            try:
-                future.result(timeout=_CAPTURE_TIMEOUT_SECONDS)
-                self._last_success = time.monotonic()
-                self._consecutive_failures = 0
-                self._logger.info("Camera capture saved to %s", path.name)
-                return path
-            except FuturesTimeoutError:
-                self._consecutive_failures += 1
-                future.cancel()
-                self._camera.close()
-                self._logger.error("Camera capture timed out after %ss", _CAPTURE_TIMEOUT_SECONDS)
-                if path.exists():
-                    path.unlink(missing_ok=True)
-                raise TimeoutError("Camera capture timed out") from None
-            except Exception:
-                self._consecutive_failures += 1
-                self._logger.exception("Camera capture failed")
-                self._camera.close()
-                if path.exists():
-                    path.unlink(missing_ok=True)
-                raise
+        if not self._lock.acquire(timeout=_LOCK_TIMEOUT_SECONDS):
+            raise CameraBusyError("Camera busy")
+
+        path = self._temp_dir / f"snapshot_{int(time.time() * 1000)}.jpg"
+        try:
+            self._camera.capture_jpeg(path, self._resolution)
+            self._last_success = time.monotonic()
+            self._consecutive_failures = 0
+            self._logger.info("Camera capture saved to %s", path.name)
+            return path
+        except subprocess.TimeoutExpired:
+            self._consecutive_failures += 1
+            self._logger.error("Camera capture timed out after %ss", _CAPTURE_TIMEOUT_SECONDS)
+            if path.exists():
+                path.unlink(missing_ok=True)
+            raise TimeoutError("Camera capture timed out") from None
+        except Exception:
+            self._consecutive_failures += 1
+            self._logger.exception("Camera capture failed")
+            self._camera.close()
+            if path.exists():
+                path.unlink(missing_ok=True)
+            raise
+        finally:
+            self._lock.release()
 
     def close(self) -> None:
-        with self._lock:
-            self._camera.close()
-            self._executor.shutdown(wait=False, cancel_futures=True)
+        if self._lock.acquire(timeout=_LOCK_TIMEOUT_SECONDS):
+            try:
+                self._camera.close()
+            finally:
+                self._lock.release()
 
     def is_healthy(self) -> bool:
         if self._consecutive_failures == 0:
