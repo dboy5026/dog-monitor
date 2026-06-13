@@ -34,63 +34,70 @@ def _format_updated(updated_at: str) -> str:
     try:
         dt = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
         hour = dt.strftime("%I").lstrip("0") or "12"
-        return f"Updated {hour}:{dt.strftime('%M %p')}"
+        return f"{hour}:{dt.strftime('%M %p')}"
     except ValueError:
         return updated_at[:19]
 
 
-def _format_temp_parts(temp_f: Any) -> tuple[str, str]:
+def _format_temp_number(temp_f: Any) -> str:
     if temp_f == "--":
-        return "--", "F"
+        return "--"
     try:
-        return str(int(round(float(temp_f)))), "°F"
+        return str(int(round(float(temp_f))))
     except (TypeError, ValueError):
-        return "--", "F"
+        return "--"
 
 
-def _build_landscape_image(epd, temp_f: Any, humidity: Any, wifi_ok: bool, updated_at: str):
+def get_ip_address() -> str:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            return sock.getsockname()[0]
+    except OSError:
+        return "N/A"
+
+
+def _build_landscape_image(epd, temp_f: Any, humidity: Any, ip_address: str, updated_at: str):
     from PIL import Image, ImageDraw
 
     width, height = epd.height, epd.width
     image = Image.new("1", (width, height), 255)
     draw = ImageDraw.Draw(image)
 
-    temp_num, temp_unit = _format_temp_parts(temp_f)
+    temp_num = _format_temp_number(temp_f)
     num_font = _load_font(58, bold=True)
-    unit_font = _load_font(22, bold=True)
-    small_font = _load_font(14, bold=False)
-    tiny_font = _load_font(11, bold=False)
+    degree_font = _load_font(34, bold=True)
+    label_font = _load_font(10, bold=False)
+    value_font = _load_font(13, bold=False)
 
     num_bbox = draw.textbbox((0, 0), temp_num, font=num_font)
-    unit_bbox = draw.textbbox((0, 0), temp_unit, font=unit_font)
-    num_h = num_bbox[3] - num_bbox[1]
-    unit_h = unit_bbox[3] - unit_bbox[1]
-    block_h = num_h + unit_h + 2
-    block_y = (height - block_h) // 2
-    left_center_x = width // 4
-
+    degree_bbox = draw.textbbox((0, 0), "°", font=degree_font)
     num_w = num_bbox[2] - num_bbox[0]
-    draw.text((left_center_x - num_w // 2, block_y), temp_num, font=num_font, fill=0)
+    num_h = num_bbox[3] - num_bbox[1]
+    degree_w = degree_bbox[2] - degree_bbox[0]
+    temp_w = num_w + degree_w + 2
+    temp_x = (width // 2 - temp_w) // 2
+    temp_y = (height - num_h) // 2
 
-    unit_w = unit_bbox[2] - unit_bbox[0]
-    draw.text(
-        (left_center_x - unit_w // 2, block_y + num_h + 2),
-        temp_unit,
-        font=unit_font,
-        fill=0,
-    )
+    draw.text((temp_x, temp_y), temp_num, font=num_font, fill=0)
+    draw.text((temp_x + num_w + 2, temp_y - 4), "°", font=degree_font, fill=0)
 
     divider_x = width // 2
     draw.line([(divider_x, 10), (divider_x, height - 10)], fill=0, width=1)
 
     info_x = divider_x + 10
-    humidity_text = f"{humidity}% humidity" if humidity != "--" else "--% humidity"
-    wifi_text = f"WiFi {'OK' if wifi_ok else 'DOWN'}"
-    updated_text = _format_updated(updated_at)
+    humidity_value = f"{humidity}%" if humidity != "--" else "--"
+    rows = (
+        ("Humidity", humidity_value),
+        ("IP Address", ip_address),
+        ("Updated", _format_updated(updated_at)),
+    )
 
-    draw.text((info_x, 22), humidity_text, font=small_font, fill=0)
-    draw.text((info_x, 48), wifi_text, font=small_font, fill=0)
-    draw.text((info_x, 74), updated_text, font=tiny_font, fill=0)
+    y = 16
+    for label, value in rows:
+        draw.text((info_x, y), label, font=label_font, fill=0)
+        draw.text((info_x, y + 13), value, font=value_font, fill=0)
+        y += 34
 
     return image
 
@@ -101,7 +108,7 @@ class BaseDisplay(ABC):
         self,
         temp_f: Any,
         humidity: Any,
-        wifi_ok: bool,
+        ip_address: str,
         updated_at: str,
     ) -> None:
         """Draw the current monitoring state on the display."""
@@ -112,12 +119,11 @@ class MockDisplay(BaseDisplay):
         self,
         temp_f: Any,
         humidity: Any,
-        wifi_ok: bool,
+        ip_address: str,
         updated_at: str,
     ) -> None:
-        wifi_label = "OK" if wifi_ok else "DOWN"
         print(
-            f"[DISPLAY] {temp_f}°F  {humidity}%  WiFi:{wifi_label}  Updated:{updated_at}",
+            f"[DISPLAY] {temp_f}°  {humidity}%  {ip_address}  Updated:{updated_at}",
             flush=True,
         )
 
@@ -127,7 +133,7 @@ class EInkDisplay(BaseDisplay):
         self,
         temp_f: Any,
         humidity: Any,
-        wifi_ok: bool,
+        ip_address: str,
         updated_at: str,
     ) -> None:
         from waveshare_epd import epd2in13_V4
@@ -135,7 +141,7 @@ class EInkDisplay(BaseDisplay):
         epd = epd2in13_V4.EPD()
         epd.init()
 
-        image = _build_landscape_image(epd, temp_f, humidity, wifi_ok, updated_at)
+        image = _build_landscape_image(epd, temp_f, humidity, ip_address, updated_at)
         epd.display(epd.getbuffer(image))
         epd.sleep()
 
@@ -144,14 +150,6 @@ def create_display(dev_mode: bool) -> BaseDisplay:
     if dev_mode:
         return MockDisplay()
     return EInkDisplay()
-
-
-def check_wifi_status() -> bool:
-    try:
-        with socket.create_connection(("8.8.8.8", 53), timeout=2):
-            return True
-    except OSError:
-        return False
 
 
 class DisplayService:
@@ -200,21 +198,21 @@ class DisplayService:
                 temp_f = reading.temperature_f if reading else "--"
                 humidity = reading.humidity if reading else "--"
                 updated_at = reading.last_sensor_update if reading else "--"
+                ip_address = get_ip_address()
 
-                wifi_ok = check_wifi_status()
                 self._display.render(
                     temp_f,
                     humidity,
-                    wifi_ok,
+                    ip_address,
                     updated_at,
                 )
                 self._last_success = time.monotonic()
                 self._consecutive_failures = 0
                 self._logger.info(
-                    "Display updated: %s°F, %s%%, WiFi %s",
+                    "Display updated: %s°, %s%%, %s",
                     temp_f,
                     humidity,
-                    "OK" if wifi_ok else "DOWN",
+                    ip_address,
                 )
             except Exception:
                 self._consecutive_failures += 1
