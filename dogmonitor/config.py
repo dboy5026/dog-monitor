@@ -5,6 +5,7 @@ from typing import Any
 
 _PACKAGE_DIR = Path(__file__).resolve().parent
 _DEFAULT_CONFIG_PATH = _PACKAGE_DIR / "config.json"
+_LOCAL_CONFIG_PATH = _PACKAGE_DIR / "config.local.json"
 
 _DEFAULTS: dict[str, Any] = {
     "dev_mode": True,
@@ -39,13 +40,19 @@ def _resolve_log_dir(raw: str) -> Path:
     return _PACKAGE_DIR.parent / path
 
 
+def _load_json(path: Path, data: dict[str, Any]) -> dict[str, Any]:
+    if path.is_file():
+        with path.open(encoding="utf-8") as f:
+            data.update(json.load(f))
+    return data
+
+
 def load_config(path: Path | str | None = None) -> Config:
     config_path = Path(path) if path else _DEFAULT_CONFIG_PATH
     data = dict(_DEFAULTS)
-
-    if config_path.is_file():
-        with config_path.open(encoding="utf-8") as f:
-            data.update(json.load(f))
+    data = _load_json(config_path, data)
+    if path is None:
+        data = _load_json(_LOCAL_CONFIG_PATH, data)
 
     resolution = data["camera_resolution"]
     if not isinstance(resolution, list) or len(resolution) != 2:

@@ -5,3 +5,4 @@ venv/
 logs/
 *.log
 .env
+dogmonitor/config.local.json
