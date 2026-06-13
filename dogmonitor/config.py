@@ -8,6 +8,7 @@ _DEFAULT_CONFIG_PATH = _PACKAGE_DIR / "config.json"
 
 _DEFAULTS: dict[str, Any] = {
     "dev_mode": True,
+    "mock_sensor": False,
     "server_port": 5000,
     "sensor_poll_interval_seconds": 5,
     "display_refresh_interval_seconds": 30,
@@ -21,6 +22,7 @@ _DEFAULTS: dict[str, Any] = {
 @dataclass(frozen=True)
 class Config:
     dev_mode: bool
+    mock_sensor: bool
     server_port: int
     sensor_poll_interval_seconds: int
     display_refresh_interval_seconds: int
@@ -51,6 +53,7 @@ def load_config(path: Path | str | None = None) -> Config:
 
     return Config(
         dev_mode=bool(data["dev_mode"]),
+        mock_sensor=bool(data["mock_sensor"]),
         server_port=int(data["server_port"]),
         sensor_poll_interval_seconds=int(data["sensor_poll_interval_seconds"]),
         display_refresh_interval_seconds=int(data["display_refresh_interval_seconds"]),

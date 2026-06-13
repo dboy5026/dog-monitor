@@ -57,8 +57,8 @@ class SHT31Sensor(BaseSensor):
         self._bus.close()
 
 
-def create_sensor(dev_mode: bool) -> BaseSensor:
-    if dev_mode:
+def create_sensor(dev_mode: bool, mock_sensor: bool = False) -> BaseSensor:
+    if dev_mode or mock_sensor:
         return MockSensor()
     return SHT31Sensor()
 

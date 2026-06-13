@@ -3,9 +3,74 @@ import socket
 import threading
 import time
 from abc import ABC, abstractmethod
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from dogmonitor.sensor import SensorService
+
+_FONT_CANDIDATES = (
+    ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", True),
+    ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", False),
+    ("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", True),
+    ("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", False),
+)
+
+
+def _load_font(size: int, bold: bool = False):
+    from PIL import ImageFont
+
+    preferred = [path for path, is_bold in _FONT_CANDIDATES if is_bold == bold]
+    fallback = [path for path, _ in _FONT_CANDIDATES]
+    for path in preferred + fallback:
+        if Path(path).is_file():
+            return ImageFont.truetype(path, size)
+    return ImageFont.load_default()
+
+
+def _format_updated(updated_at: str) -> str:
+    if updated_at == "--":
+        return "No reading yet"
+    try:
+        dt = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+        hour = dt.strftime("%I").lstrip("0") or "12"
+        return f"Updated {hour}:{dt.strftime('%M %p')}"
+    except ValueError:
+        return updated_at[:19]
+
+
+def _build_landscape_image(epd, temp_f: Any, humidity: Any, wifi_ok: bool, updated_at: str):
+    from PIL import Image, ImageDraw
+
+    width, height = epd.height, epd.width
+    image = Image.new("1", (width, height), 255)
+    draw = ImageDraw.Draw(image)
+
+    temp_font = _load_font(54, bold=True)
+    small_font = _load_font(14, bold=False)
+    tiny_font = _load_font(11, bold=False)
+
+    temp_text = f"{temp_f}°F" if temp_f != "--" else "--°F"
+    temp_bbox = draw.textbbox((0, 0), temp_text, font=temp_font)
+    temp_w = temp_bbox[2] - temp_bbox[0]
+    temp_h = temp_bbox[3] - temp_bbox[1]
+    temp_x = max(6, (width // 2 - temp_w) // 2)
+    temp_y = (height - temp_h) // 2 - 2
+    draw.text((temp_x, temp_y), temp_text, font=temp_font, fill=0)
+
+    divider_x = width // 2
+    draw.line([(divider_x, 10), (divider_x, height - 10)], fill=0, width=1)
+
+    info_x = divider_x + 10
+    humidity_text = f"{humidity}% humidity" if humidity != "--" else "--% humidity"
+    wifi_text = f"WiFi {'OK' if wifi_ok else 'DOWN'}"
+    updated_text = _format_updated(updated_at)
+
+    draw.text((info_x, 22), humidity_text, font=small_font, fill=0)
+    draw.text((info_x, 48), wifi_text, font=small_font, fill=0)
+    draw.text((info_x, 74), updated_text, font=tiny_font, fill=0)
+
+    return image
 
 
 class BaseDisplay(ABC):
@@ -43,35 +108,12 @@ class EInkDisplay(BaseDisplay):
         wifi_ok: bool,
         updated_at: str,
     ) -> None:
-        from PIL import Image, ImageDraw, ImageFont
         from waveshare_epd import epd2in13_V4
 
         epd = epd2in13_V4.EPD()
         epd.init()
 
-        image = Image.new("1", (epd.width, epd.height), 255)
-        draw = ImageDraw.Draw(image)
-        font = ImageFont.load_default()
-
-        wifi_label = "OK" if wifi_ok else "DOWN"
-        updated_label = updated_at if updated_at != "--" else "N/A"
-        if len(updated_label) > 19:
-            updated_label = updated_label[:19]
-
-        lines = [
-            "Dog Monitor",
-            f"Temp: {temp_f} F",
-            f"Humidity: {humidity}%",
-            f"WiFi: {wifi_label}",
-            f"Updated:",
-            updated_label,
-        ]
-
-        y = 4
-        for line in lines:
-            draw.text((4, y), line, font=font, fill=0)
-            y += 18
-
+        image = _build_landscape_image(epd, temp_f, humidity, wifi_ok, updated_at)
         epd.display(epd.getbuffer(image))
         epd.sleep()
 

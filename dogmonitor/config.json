@@ -1,5 +1,6 @@
 {
   "dev_mode": true,
+  "mock_sensor": false,
   "server_port": 5000,
   "sensor_poll_interval_seconds": 5,
   "display_refresh_interval_seconds": 30,

@@ -34,14 +34,15 @@ def main() -> None:
     register_shutdown_logger(logger)
 
     logger.info(
-        "Dog Monitor starting (dev_mode=%s, port=%s)",
+        "Dog Monitor starting (dev_mode=%s, mock_sensor=%s, port=%s)",
         config.dev_mode,
+        config.mock_sensor,
         config.server_port,
     )
 
     start_time = time.monotonic()
     sensor_service = SensorService(
-        create_sensor(config.dev_mode),
+        create_sensor(config.dev_mode, config.mock_sensor),
         config.sensor_poll_interval_seconds,
         logger,
     )
