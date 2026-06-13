@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dog Monitor</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 0;
+      padding: 1.5rem;
+      background: #1a1a2e;
+      color: #eee;
+      max-width: 720px;
+      margin-inline: auto;
+    }
+    h1 { margin-top: 0; font-size: 1.5rem; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .card {
+      background: #16213e;
+      border-radius: 8px;
+      padding: 1rem;
+    }
+    .card label {
+      display: block;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #8892b0;
+      margin-bottom: 0.25rem;
+    }
+    .card .value { font-size: 1.5rem; font-weight: 600; }
+    .snapshot {
+      background: #16213e;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    .snapshot img {
+      display: block;
+      width: 100%;
+      border-radius: 4px;
+      background: #0f0f1a;
+    }
+    .snapshot .placeholder {
+      aspect-ratio: 16 / 9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #8892b0;
+      background: #0f0f1a;
+      border-radius: 4px;
+    }
+    button {
+      background: #e94560;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 0.6rem 1.2rem;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    button:hover { background: #c73a52; }
+    button:disabled { opacity: 0.6; cursor: wait; }
+    .meta { font-size: 0.85rem; color: #8892b0; margin-top: 0.5rem; }
+    .error { color: #e94560; margin-top: 0.5rem; }
+  </style>
+</head>
+<body>
+  <h1>Dog Monitor</h1>
+
+  <div class="grid">
+    <div class="card">
+      <label>Temperature</label>
+      <div class="value" id="temperature">--</div>
+    </div>
+    <div class="card">
+      <label>Humidity</label>
+      <div class="value" id="humidity">--</div>
+    </div>
+    <div class="card">
+      <label>Uptime</label>
+      <div class="value" id="uptime">--</div>
+    </div>
+  </div>
+
+  <div class="snapshot">
+    <label>Last image</label>
+    <div id="image-container">
+      <div class="placeholder">Loading snapshot…</div>
+    </div>
+    <div class="meta" id="last-update">Last sensor update: --</div>
+    <div class="error" id="error"></div>
+  </div>
+
+  <button type="button" id="refresh">Refresh</button>
+
+  <script>
+    const temperatureEl = document.getElementById("temperature");
+    const humidityEl = document.getElementById("humidity");
+    const uptimeEl = document.getElementById("uptime");
+    const lastUpdateEl = document.getElementById("last-update");
+    const imageContainer = document.getElementById("image-container");
+    const errorEl = document.getElementById("error");
+    const refreshBtn = document.getElementById("refresh");
+
+    function formatUptime(seconds) {
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = seconds % 60;
+      if (h > 0) return `${h}h ${m}m ${s}s`;
+      if (m > 0) return `${m}m ${s}s`;
+      return `${s}s`;
+    }
+
+    function formatTimestamp(iso) {
+      if (!iso) return "--";
+      return new Date(iso).toLocaleString();
+    }
+
+    async function loadStatus() {
+      const res = await fetch("/status");
+      if (!res.ok) throw new Error("Failed to load status");
+      const data = await res.json();
+
+      if (data.temperature_f != null) {
+        temperatureEl.textContent = `${data.temperature_f}°F (${data.temperature_c}°C)`;
+      } else {
+        temperatureEl.textContent = "--";
+      }
+
+      humidityEl.textContent = data.humidity != null ? `${data.humidity}%` : "--";
+      lastUpdateEl.textContent = `Last sensor update: ${formatTimestamp(data.last_sensor_update)}`;
+    }
+
+    async function loadHealth() {
+      const res = await fetch("/health");
+      if (!res.ok) throw new Error("Failed to load health");
+      const data = await res.json();
+      uptimeEl.textContent = formatUptime(data.uptime_seconds);
+    }
+
+    async function loadSnapshot() {
+      const res = await fetch(`/snapshot?t=${Date.now()}`);
+      if (!res.ok) throw new Error("Failed to load snapshot");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      imageContainer.innerHTML = "";
+      const img = document.createElement("img");
+      img.src = url;
+      img.alt = "Latest snapshot";
+      img.onload = () => URL.revokeObjectURL(url);
+      imageContainer.appendChild(img);
+    }
+
+    async function refreshAll() {
+      errorEl.textContent = "";
+      refreshBtn.disabled = true;
+      try {
+        await Promise.all([loadStatus(), loadHealth(), loadSnapshot()]);
+      } catch (err) {
+        errorEl.textContent = err.message;
+      } finally {
+        refreshBtn.disabled = false;
+      }
+    }
+
+    refreshBtn.addEventListener("click", refreshAll);
+    refreshAll();
+    setInterval(refreshAll, 30000);
+  </script>
+</body>
+</html>

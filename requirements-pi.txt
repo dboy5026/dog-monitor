@@ -1,0 +1,4 @@
+# Pi hardware dependencies (install on Raspberry Pi OS only).
+# Also install system packages: python3-picamera2, SPI/I2C enabled in raspi-config.
+# Waveshare e-Paper driver: clone https://github.com/waveshare/e-Paper and add to PYTHONPATH.
+smbus2>=0.4
