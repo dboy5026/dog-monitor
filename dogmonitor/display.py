@@ -44,9 +44,9 @@ class EInkDisplay(BaseDisplay):
         updated_at: str,
     ) -> None:
         from PIL import Image, ImageDraw, ImageFont
-        from waveshare_epd import epd2in13_V2
+        from waveshare_epd import epd2in13_V4
 
-        epd = epd2in13_V2.EPD()
+        epd = epd2in13_V4.EPD()
         epd.init()
 
         image = Image.new("1", (epd.width, epd.height), 255)

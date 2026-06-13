@@ -1,4 +1,7 @@
+import os
+import sys
 import time
+from pathlib import Path
 
 from dogmonitor.api import AppServices, create_app
 from dogmonitor.camera import CameraService, create_camera
@@ -8,8 +11,25 @@ from dogmonitor.logger import register_shutdown_logger, setup_logging
 from dogmonitor.sensor import SensorService, create_sensor
 
 
+def _configure_pi_environment(dev_mode: bool) -> None:
+    if dev_mode:
+        return
+
+    os.environ.setdefault("GPIOZERO_PIN_FACTORY", "lgpio")
+
+    for lib in (
+        Path.home() / "e-Paper" / "RaspberryPi_JetsonNano" / "python" / "lib",
+        Path.home() / "LAFVIN-2.13inch-ePaper-HAT" / "RaspberryPi" / "python" / "lib",
+    ):
+        if lib.is_dir():
+            path = str(lib)
+            if path not in sys.path:
+                sys.path.insert(0, path)
+
+
 def main() -> None:
     config = load_config()
+    _configure_pi_environment(config.dev_mode)
     logger = setup_logging(config)
     register_shutdown_logger(logger)
 

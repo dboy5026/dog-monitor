@@ -1,4 +1,13 @@
 # Pi hardware dependencies (install on Raspberry Pi OS only).
-# Also install system packages: python3-picamera2, SPI/I2C enabled in raspi-config.
-# Waveshare e-Paper driver: clone https://github.com/waveshare/e-Paper and add to PYTHONPATH.
+#
+# System packages:
+#   sudo apt install python3-picamera2 python3-lgpio python3-spidev python3-gpiozero
+#   Enable SPI in raspi-config
+#
+# LAFVIN 2.13" e-Paper HAT uses the V4 driver (epd2in13_V4):
+#   https://lafvin-213inch-epaper-hat.readthedocs.io/en/latest/Tutorial/1.raspberrypi.html
+#
+# Clone either driver library and add to PYTHONPATH (app.py auto-detects these paths):
+#   git clone https://github.com/waveshare/e-Paper.git
+#   git clone https://github.com/lafvintech/LAFVIN-2.13inch-ePaper-HAT.git
 smbus2>=0.4
